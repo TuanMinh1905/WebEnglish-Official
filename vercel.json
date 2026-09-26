@@ -3,7 +3,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "build",
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/server/server.js" },
-    { "source": "/(.*)",       "destination": "/index.html" }
+    { "source": "/api/(.*)", "destination": "/api/index.js" },
+    { "source": "/(.*)",     "destination": "/index.html" }
   ]
 }
