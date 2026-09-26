@@ -10,9 +10,10 @@
 | Layer | Technology | Version | Ghi chú |
 |-------|-----------|---------|---------|
 | Frontend | React + TypeScript | CRA (react-scripts) | **KHÔNG** dùng Vite hay Next.js |
+| Routing | react-router-dom | v7+ | `BrowserRouter` + `NavLink` + `Routes/Route` |
 | Styling | Vanilla CSS | - | `src/index.css` — **KHÔNG** dùng Tailwind |
 | Backend | Express.js | **v4** (không phải v5) | Express 5 bị lỗi exit ngay lập tức |
-| Storage | JSON file | - | `data/vocab.json` — **KHÔNG** dùng Google Sheets hay DB |
+| Storage | JSON file | - | `data/vocab.json` + `data/tabs.json` — **KHÔNG** dùng DB |
 | AI | OpenAI | v7+ | Named import: `const { OpenAI } = require('openai')` |
 | Image upload | Multer | - | Upload vào `data/images/` |
 | ID generation | UUID | v4 | `const { v4: uuidv4 } = require('uuid')` |
@@ -25,16 +26,17 @@
 vocab-app/
 ├── data/                      ← Được push lên Git
 │   ├── vocab.json             ← Database (JSON array of VocabEntry)
+│   ├── tabs.json              ← Danh sách tabs/groups (JSON array of Tab)
 │   └── images/                ← Ảnh đính kèm sentence
 ├── server/
 │   └── server.js              ← Backend Express (CommonJS, KHÔNG dùng ESM)
 ├── src/
-│   ├── App.tsx                ← Root component + VocabEntry type + navigation
+│   ├── App.tsx                ← Root component + VocabEntry type + BrowserRouter
 │   ├── index.css              ← Toàn bộ CSS (design system, tất cả components)
 │   └── components/
-│       ├── VocabManager.tsx   ← Tab Vocab: CRUD form + danh sách
-│       ├── QuizMode.tsx       ← Tab Quiz: AI quiz generator
-│       ├── ChatMode.tsx       ← Tab Chat: AI conversation + corrections
+│       ├── VocabManager.tsx   ← Page /vocab: CRUD form + danh sách
+│       ├── QuizMode.tsx       ← Page /quiz: AI quiz generator + tab selector
+│       ├── ChatMode.tsx       ← Page /chat: AI conversation + corrections
 │       └── Toast.tsx          ← Notification system
 ├── .env                       ← KHÔNG push Git (chứa API keys)
 ├── .gitignore                 ← data/ được include, .env được exclude
@@ -55,7 +57,15 @@ export interface VocabEntry {
   pronunciation: string;   // Phát âm IPA, ví dụ "/ˈkwɒlɪfaɪ/"
   meaning: string;         // Nghĩa tiếng Việt, ví dụ "(v) Đủ điều kiện"
   synonyms: string;        // Từ đồng nghĩa, ví dụ "eligible, certified"
+  group: string;           // Tên tab/group, ví dụ "T9/2026" hoặc "" nếu chưa phân nhóm
   dateAdded: string;       // Định dạng vi-VN: "26/9/2026"
+}
+
+// Tab model — lưu trong data/tabs.json
+interface Tab {
+  id: string;    // UUID v4
+  name: string;  // Tên tab, ví dụ "T9/2026"
+  color: string; // Màu hex, ví dụ "#8b5cf6"
 }
 ```
 
@@ -75,8 +85,12 @@ export interface VocabEntry {
 | PUT | `/api/vocab/:id` | Cập nhật entry theo id |
 | DELETE | `/api/vocab/:id` | Xóa entry + xóa file ảnh nếu có |
 | POST | `/api/upload` | Upload ảnh → lưu vào `data/images/`, trả về `{ url }` |
-| POST | `/api/quiz` | Gọi OpenAI tạo 5 câu trắc nghiệm từ vocabList |
+| POST | `/api/quiz` | Gọi OpenAI tạo câu trắc nghiệm — nhận `{ vocabList, count }`, count từ 1–50 |
 | POST | `/api/chat` | Gọi OpenAI chat với systemPrompt, trả về `{ reply }` |
+| GET | `/api/tabs` | Lấy danh sách tabs từ `data/tabs.json` |
+| POST | `/api/tabs` | Tạo tab mới `{ name, color }` |
+| PUT | `/api/tabs/:id` | Đổi tên tab + cập nhật `group` trên tất cả vocab thuộc tab đó |
+| DELETE | `/api/tabs/:id` | Xóa tab, các vocab thuộc tab đó → `group: ""` |
 
 > Frontend dùng proxy: mọi request `/api/*` được forward đến `http://localhost:3002`
 > Cấu hình proxy ở `package.json` → `"proxy": "http://localhost:3002"`
@@ -126,7 +140,7 @@ export interface VocabEntry {
 .btn / .btn-primary / .btn-ghost / .btn-danger / .btn-sm → Buttons
 .form-input / .form-textarea → Input fields
 .input-group / .form-grid / .full-span → Form layout
-.navbar / .navbar-brand / .nav-tab → Navigation
+.navbar / .navbar-brand / .nav-tab → Navigation (nav-tab dùng cho NavLink — cần text-decoration:none)
 .page-header          → Tiêu đề trang
 .word-tag / .word-tag-container / .word-tag-input → Multi-word tags
 .vocab-card / .vocab-card-inner / .vocab-word-chip → Vocab list items
@@ -134,6 +148,12 @@ export interface VocabEntry {
 .image-upload-area / .upload-placeholder → Image upload zone
 .chat-messages / .msg-bubble / .chat-input-area → Chat UI
 .corrections / .correction-item → Grammar corrections
+.vtab / .vtab-active / .vtab-count → Vocab group tab bar
+.quiz-setup-card / .quiz-preset-btn / .quiz-group-btn → Quiz setup UI
+.quiz-group-section / .quiz-group-grid / .quiz-group-summary → Tab selector trong Quiz
+.option-btn / .option-label / .option-text → Quiz answer options
+.explanation-box / .expl-correct / .expl-wrong → Quiz instant feedback
+.result-score-ring / .result-chips / .result-review → Quiz result page
 ```
 
 ---
@@ -155,7 +175,9 @@ export interface VocabEntry {
 
 - **Model**: `gpt-4o-mini` (nhanh + rẻ)
 - **Import trong server**: `const { OpenAI } = require('openai')` — named import, không phải default
-- **Quiz format**: JSON array, 5 câu, types: `word_to_meaning | meaning_to_word | fill_in`
+- **Quiz format**: JSON array, số câu do `count` quyết định (1–50), types: `word_to_meaning | meaning_to_word | fill_in`
+- **Quiz vocab filter**: QuizMode filter `v.meaning || v.sentence` — KHÔNG yêu cầu `newWords` phải có
+- **Quiz tab filter**: QuizMode fetch `/api/tabs` để hiện group selector; filter vocab theo `v.group`
 - **Chat format**: AI reply kèm `---` section có `📝 **Corrections:**` hoặc `✨ Great job!`
 
 ---
@@ -166,6 +188,7 @@ export interface VocabEntry {
 Push lên Git:
   - Toàn bộ source code (src/, server/, public/)
   - data/vocab.json (vocabulary database)
+  - data/tabs.json (tab definitions)
   - data/images/ (sentence images)
   - package.json, package-lock.json
   - .gitignore, RULES.md
@@ -176,6 +199,8 @@ KHÔNG push lên Git:
   - node_modules/
   - build/
 ```
+
+**Remote**: `https://github.com/TuanMinh1905/WebEnglish-Official.git` — branch `master`
 
 ---
 

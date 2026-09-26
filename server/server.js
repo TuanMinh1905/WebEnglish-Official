@@ -12,16 +12,18 @@ app.use(cors());
 app.use(express.json());
 
 // ─── Paths ────────────────────────────────────────────────────────────────────
-const DATA_DIR    = path.join(__dirname, '../data');
-const VOCAB_FILE  = path.join(DATA_DIR, 'vocab.json');
-const TABS_FILE   = path.join(DATA_DIR, 'tabs.json');
-const IMAGES_DIR  = path.join(DATA_DIR, 'images');
+const DATA_DIR         = path.join(__dirname, '../data');
+const VOCAB_FILE       = path.join(DATA_DIR, 'vocab.json');
+const TABS_FILE        = path.join(DATA_DIR, 'tabs.json');
+const CHAT_HISTORY_FILE = path.join(DATA_DIR, 'chat-history.json');
+const IMAGES_DIR       = path.join(DATA_DIR, 'images');
 
 // Ensure directories exist
 if (!fs.existsSync(DATA_DIR))   fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
 if (!fs.existsSync(VOCAB_FILE)) fs.writeFileSync(VOCAB_FILE, '[]', 'utf8');
 if (!fs.existsSync(TABS_FILE))  fs.writeFileSync(TABS_FILE,  '[]', 'utf8');
+if (!fs.existsSync(CHAT_HISTORY_FILE)) fs.writeFileSync(CHAT_HISTORY_FILE, '[]', 'utf8');
 
 // Serve images statically
 app.use('/images', express.static(IMAGES_DIR));
@@ -38,6 +40,12 @@ function readTabs() {
 }
 function writeTabs(data) {
   fs.writeFileSync(TABS_FILE, JSON.stringify(data, null, 2), 'utf8');
+}
+function readChatHistory() {
+  try { return JSON.parse(fs.readFileSync(CHAT_HISTORY_FILE, 'utf8')); } catch { return []; }
+}
+function writeChatHistory(data) {
+  fs.writeFileSync(CHAT_HISTORY_FILE, JSON.stringify(data, null, 2), 'utf8');
 }
 
 // ─── Image Upload ─────────────────────────────────────────────────────────────
@@ -203,7 +211,63 @@ If no mistakes: ✨ Great job! Your English sounds natural.`
   }
 });
 
-// ─── Tabs CRUD ────────────────────────────────────────────────────────────────
+// ─── Chat History CRUD ────────────────────────────────────────────────────────
+
+// GET /api/chat-history — get all sessions (newest first)
+app.get('/api/chat-history', (req, res) => {
+  const history = readChatHistory();
+  res.json(history.slice().reverse());
+});
+
+// POST /api/chat-history — save a new chat session
+app.post('/api/chat-history', (req, res) => {
+  try {
+    const { topic, topicLabel, messages } = req.body;
+    if (!messages || messages.length === 0) {
+      return res.status(400).json({ error: 'No messages to save' });
+    }
+    const history = readChatHistory();
+    const session = {
+      id: uuidv4(),
+      topic: topic || 'freeform',
+      topicLabel: topicLabel || '💬 Free Chat',
+      messages,
+      savedAt: new Date().toISOString(),
+      messageCount: messages.filter(m => m.role === 'user').length,
+    };
+    history.push(session);
+    writeChatHistory(history);
+    res.json(session);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/chat-history/:id — delete one session
+app.delete('/api/chat-history/:id', (req, res) => {
+  try {
+    let history = readChatHistory();
+    const found = history.find(s => s.id === req.params.id);
+    if (!found) return res.status(404).json({ error: 'Session not found' });
+    history = history.filter(s => s.id !== req.params.id);
+    writeChatHistory(history);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/chat-history — delete ALL sessions
+app.delete('/api/chat-history', (req, res) => {
+  try {
+    writeChatHistory([]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 
 // GET /api/tabs
 app.get('/api/tabs', (req, res) => res.json(readTabs()));

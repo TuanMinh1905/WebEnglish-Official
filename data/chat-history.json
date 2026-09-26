@@ -1,0 +1,19 @@
+[
+  {
+    "id": "2be736a6-b059-419d-8cf8-cbd463b813af",
+    "topic": "interview",
+    "topicLabel": "💼 Job Interview",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Let's practice a job interview conversation. Act as the interviewer and ask me questions."
+      },
+      {
+        "role": "assistant",
+        "content": "Sure! Let’s start the interview. \n\n**Interviewer:** Thank you for coming in today. Can you please tell me a little about yourself and your background?"
+      }
+    ],
+    "savedAt": "2026-09-26T05:33:02.340Z",
+    "messageCount": 1
+  }
+]
