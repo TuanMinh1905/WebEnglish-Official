@@ -321,7 +321,18 @@ app.delete('/api/tabs/:id', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ─── Production: serve React build ───────────────────────────────────────────
+if (process.env.NODE_ENV === 'production') {
+  const buildPath = path.join(__dirname, '../build');
+  app.use(express.static(buildPath));
+  // React Router — return index.html for any non-API route
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(buildPath, 'index.html'));
+  });
+}
+
 // ─── Start ────────────────────────────────────────────────────────────────────
+
 const PORT = process.env.PORT || 3002;
 app.listen(PORT, () => {
   console.log(`✅ VocabMaster API running at http://localhost:${PORT}`);
