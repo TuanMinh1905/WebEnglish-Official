@@ -22,6 +22,10 @@ npm-debug.log*
 .vscode/
 *.swp
 
+# Personal chat history (local only — not needed in production)
+data/chat-history.json
+
 # ✅ data/ is intentionally tracked for Git backup
-# data/vocab.json - vocabulary entries
-# data/images/    - sentence images
+# data/vocab.json - vocabulary entries (JSON backup)
+# data/tabs.json  - tab/group definitions
+# data/images/    - legacy (images now stored as Base64 in MongoDB)
