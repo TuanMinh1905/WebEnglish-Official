@@ -47,7 +47,6 @@ const ChatMode: React.FC<Props> = ({ addToast }) => {
   const [input, setInput]               = useState('');
   const [sending, setSending]           = useState(false);
   const [activeTopic, setActiveTopic]   = useState<string | null>(null);
-  const [activeTopicLabel, setActiveTopicLabel] = useState('');
 
   // History sidebar
   const [history, setHistory]           = useState<ChatSession[]>([]);
@@ -83,7 +82,6 @@ const ChatMode: React.FC<Props> = ({ addToast }) => {
   const selectTopic = async (topic: typeof TOPICS[0]) => {
     setViewingSession(null);
     setActiveTopic(topic.id);
-    setActiveTopicLabel(topic.label);
     setMessages([]);
     setSending(true);
     try {
