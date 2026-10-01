@@ -1,7 +1,92 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { VocabEntry } from '../App';
 
-// ── Word Tag Input (top-level so React never remounts it on parent re-render) ──
+// ── TTS Hook ──────────────────────────────────────────────────────────────────
+const useTTS = () => {
+  const speak = useCallback((text: string) => {
+    if (!window.speechSynthesis) return;
+    // Strip HTML tags and trailing POS abbreviations like (adj), (n), (v/adj), etc.
+    const clean = text
+      .replace(/<[^>]*>/g, '')
+      .replace(/\s*\([^)]{1,10}\)\s*$/, '') // remove trailing (n), (adj), (v/adj) etc
+      .trim();
+    if (!clean) return;
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(clean);
+    utt.lang = 'en-US';
+    utt.rate = 0.92;
+    utt.pitch = 1;
+    // Try to pick an English voice
+    const voices = window.speechSynthesis.getVoices();
+    const enVoice = voices.find(v => v.lang.startsWith('en-US')) || voices.find(v => v.lang.startsWith('en'));
+    if (enVoice) utt.voice = enVoice;
+    window.speechSynthesis.speak(utt);
+  }, []);
+  return { speak };
+};
+
+// ── Speakable Wrapper ─────────────────────────────────────────────────────────
+// Wraps any text content and shows a 🔊 button on hover
+interface SpeakableProps {
+  text: string;
+  className?: string;
+  children: React.ReactNode;
+}
+const Speakable: React.FC<SpeakableProps> = ({ text, className, children }) => {
+  const { speak } = useTTS();
+  const [hovered, setHovered] = useState(false);
+  return (
+    <span
+      className={`speakable-wrap ${className || ''}`}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {children}
+      {hovered && (
+        <button
+          type="button"
+          className="tts-btn"
+          onClick={e => { e.stopPropagation(); speak(text); }}
+          title="Nghe phát âm"
+        >
+          🔊
+        </button>
+      )}
+    </span>
+  );
+};
+
+// ── SpeakableDiv — for block elements (sentences/meanings) ───────────────────
+interface SpeakableDivProps {
+  text: string;
+  className?: string;
+  children: React.ReactNode;
+}
+const SpeakableDiv: React.FC<SpeakableDivProps> = ({ text, className, children }) => {
+  const { speak } = useTTS();
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div
+      className={`speakable-block ${className || ''}`}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {children}
+      {hovered && (
+        <button
+          type="button"
+          className="tts-btn tts-btn-block"
+          onClick={e => { e.stopPropagation(); speak(text); }}
+          title="Nghe phát âm"
+        >
+          🔊
+        </button>
+      )}
+    </div>
+  );
+};
+
+// ── Word Tag Input ─────────────────────────────────────────────────────────────
 interface WordTagInputProps {
   words: string[];
   input: string;
@@ -59,8 +144,15 @@ const EMPTY_FORM = {
   group: '',
 };
 
+const LS_TAB_KEY = 'vocabmaster_active_tab';
+
 const VocabManager: React.FC<Props> = ({ vocabList, loading, onRefresh, addToast }) => {
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm] = useState(() => {
+    // Initialize group from the last selected tab right away (no async wait needed)
+    const savedTab = localStorage.getItem(LS_TAB_KEY) || '';
+    const group = (savedTab && savedTab !== '__all__' && savedTab !== '__ungrouped__') ? savedTab : '';
+    return { ...EMPTY_FORM, group };
+  });
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [search, setSearch] = useState('');
@@ -71,13 +163,35 @@ const VocabManager: React.FC<Props> = ({ vocabList, loading, onRefresh, addToast
     pronunciation: '', meaning: '', synonyms: '', group: '',
   });
 
-  // ── Tabs state ────────────────────────────────────────────────
+  // ── Batch / Convo mode ──────────────────────────────────────────────────────
+  const [inputMode, setInputMode] = useState<'normal' | 'batch' | 'convo'>('batch');
+  const [batchText, setBatchText] = useState('');
+  const [batchSentence, setBatchSentence] = useState('');
+  const [batchParsing, setBatchParsing] = useState(false);
+  // Convo mode
+  const [convoSentence, setConvoSentence] = useState('');
+  const [convoMeaning, setConvoMeaning] = useState('');
+
+  // ── Tabs state ────────────────────────────────────────────────────────────
   const [tabs, setTabs] = useState<VocabTab[]>([]);
-  const [activeVocabTab, setActiveVocabTab] = useState<string>('__all__');
+  // Restore last tab from localStorage
+  const [activeVocabTab, setActiveVocabTab] = useState<string>(() => {
+    return localStorage.getItem(LS_TAB_KEY) || '__all__';
+  });
   const [newTabName, setNewTabName] = useState('');
   const [showAddTab, setShowAddTab] = useState(false);
   const [renamingTab, setRenamingTab] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+
+  // Save active tab to localStorage whenever it changes
+  const handleSetActiveTab = useCallback((tabName: string) => {
+    setActiveVocabTab(tabName);
+    localStorage.setItem(LS_TAB_KEY, tabName);
+    // Also update the form's default group to the selected tab
+    if (tabName !== '__all__' && tabName !== '__ungrouped__') {
+      setForm(f => ({ ...f, group: tabName }));
+    }
+  }, []);
 
   const fetchTabs = useCallback(async () => {
     try {
@@ -88,6 +202,7 @@ const VocabManager: React.FC<Props> = ({ vocabList, loading, onRefresh, addToast
   }, []);
 
   useEffect(() => { fetchTabs(); }, [fetchTabs]);
+
 
   const handleCreateTab = async () => {
     const name = newTabName.trim();
@@ -101,10 +216,10 @@ const VocabManager: React.FC<Props> = ({ vocabList, loading, onRefresh, addToast
       if (!res.ok) { const e = await res.json(); addToast(e.error || 'Error', 'error'); return; }
       const tab = await res.json();
       setTabs(prev => [...prev, tab]);
-      setActiveVocabTab(tab.name);
+      handleSetActiveTab(tab.name);
       setNewTabName('');
       setShowAddTab(false);
-      addToast(`Tab “${tab.name}” created!`, 'success');
+      addToast(`Tab "${tab.name}" created!`, 'success');
     } catch { addToast('Failed to create tab', 'error'); }
   };
 
@@ -119,7 +234,7 @@ const VocabManager: React.FC<Props> = ({ vocabList, loading, onRefresh, addToast
       });
       if (!res.ok) { addToast('Rename failed', 'error'); return; }
       setTabs(prev => prev.map(t => t.id === tab.id ? { ...t, name } : t));
-      if (activeVocabTab === tab.name) setActiveVocabTab(name);
+      if (activeVocabTab === tab.name) handleSetActiveTab(name);
       setRenamingTab(null);
       onRefresh();
       addToast('Tab renamed!', 'success');
@@ -127,17 +242,17 @@ const VocabManager: React.FC<Props> = ({ vocabList, loading, onRefresh, addToast
   };
 
   const handleDeleteTab = async (tab: VocabTab) => {
-    if (!window.confirm(`Delete tab “${tab.name}”? Entries will become ungrouped.`)) return;
+    if (!window.confirm(`Delete tab "${tab.name}"? Entries will become ungrouped.`)) return;
     try {
       await fetch(`/api/tabs/${tab.id}`, { method: 'DELETE' });
       setTabs(prev => prev.filter(t => t.id !== tab.id));
-      if (activeVocabTab === tab.name) setActiveVocabTab('__all__');
+      if (activeVocabTab === tab.name) handleSetActiveTab('__all__');
       onRefresh();
       addToast('Tab deleted', 'success');
     } catch { addToast('Failed to delete tab', 'error'); }
   };
 
-  // ── Word tag helpers ──────────────────────────────────────────────
+  // ── Word tag helpers ──────────────────────────────────────────────────────
   const addWord = (words: string[], input: string, setWords: (w: string[]) => void, setInput: (s: string) => void) => {
     const trimmed = input.trim();
     if (trimmed && !words.includes(trimmed)) {
@@ -150,7 +265,7 @@ const VocabManager: React.FC<Props> = ({ vocabList, loading, onRefresh, addToast
     setWords(words.filter((_, i) => i !== idx));
   };
 
-  // ── Image upload — returns URL for inline insertion ───────────────
+  // ── Image upload ───────────────────────────────────────────────────────────
   const handleImageUpload = async (file: File): Promise<string> => {
     const fd = new FormData();
     fd.append('image', file);
@@ -169,7 +284,71 @@ const VocabManager: React.FC<Props> = ({ vocabList, loading, onRefresh, addToast
     }
   };
 
-  // ── Add vocab ─────────────────────────────────────────────────────
+  // ── Batch Parse ────────────────────────────────────────────────────────────
+  const handleBatchParse = async () => {
+    if (!batchText.trim()) { addToast('Nhập văn bản trước!', 'error'); return; }
+    setBatchParsing(true);
+    try {
+      const res = await fetch('/api/parse-vocab', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: batchText,
+          group: form.group,
+          sentence: batchSentence,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        addToast(err.error || 'Parse failed', 'error');
+        return;
+      }
+      const data = await res.json();
+      addToast(`✅ Đã thêm ${data.count} từ vựng!`, 'success');
+      setBatchText('');
+      setBatchSentence('');
+      setInputMode('normal');
+      onRefresh();
+    } catch {
+      addToast('Lỗi kết nối server', 'error');
+    } finally {
+      setBatchParsing(false);
+    }
+  };
+
+  // ── Save Convo entry ──────────────────────────────────────────────────
+  const handleConvoSave = async () => {
+    const plainText = convoSentence.replace(/<[^>]*>/g, '').trim();
+    if (!plainText) { addToast('Nhập câu giao tiếp trước!', 'error'); return; }
+    setSaving(true);
+    try {
+      const entry = {
+        sentence:      convoSentence,
+        sentenceImage: null,
+        newWords:      [] as string[],
+        pronunciation: '',
+        meaning:       convoMeaning.trim(),
+        synonyms:      '',
+        group:         form.group,
+      };
+      const res = await fetch('/api/vocab', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(entry),
+      });
+      if (!res.ok) throw new Error('Save failed');
+      addToast('✅ Đã lưu câu giao tiếp!', 'success');
+      setConvoSentence('');
+      setConvoMeaning('');
+      onRefresh();
+    } catch {
+      addToast('Lỗi kết nối server', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Add vocab (normal mode) ────────────────────────────────────────────────
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     const allWords = form.wordInput.trim()
@@ -195,7 +374,7 @@ const VocabManager: React.FC<Props> = ({ vocabList, loading, onRefresh, addToast
       });
       if (!res.ok) throw new Error('Failed');
       addToast('Word added! 🎉', 'success');
-      setForm(EMPTY_FORM);
+      setForm(f => ({ ...EMPTY_FORM, group: f.group })); // keep group
       onRefresh();
     } catch {
       addToast('Failed to add. Is the server running?', 'error');
@@ -204,7 +383,7 @@ const VocabManager: React.FC<Props> = ({ vocabList, loading, onRefresh, addToast
     }
   };
 
-  // ── Delete ────────────────────────────────────────────────────────
+  // ── Delete ─────────────────────────────────────────────────────────────────
   const handleDelete = async (id: string) => {
     if (!window.confirm('Delete this entry?')) return;
     try {
@@ -216,7 +395,7 @@ const VocabManager: React.FC<Props> = ({ vocabList, loading, onRefresh, addToast
     }
   };
 
-  // ── Edit ──────────────────────────────────────────────────────────
+  // ── Edit ───────────────────────────────────────────────────────────────────
   const startEdit = (v: VocabEntry) => {
     setEditingId(v.id);
     setEditForm({
@@ -246,15 +425,13 @@ const VocabManager: React.FC<Props> = ({ vocabList, loading, onRefresh, addToast
     }
   };
 
-  // ── Filter (by active tab + search) ─────────────────────────────────────
+  // ── Filter ─────────────────────────────────────────────────────────────────
   const filtered = vocabList.filter(v => {
-    // Tab filter
     if (activeVocabTab === '__ungrouped__') {
       if (v.group && v.group !== '') return false;
     } else if (activeVocabTab !== '__all__') {
       if ((v.group || '') !== activeVocabTab) return false;
     }
-    // Search filter
     const q = search.toLowerCase();
     if (!q) return true;
     return (
@@ -272,7 +449,7 @@ const VocabManager: React.FC<Props> = ({ vocabList, loading, onRefresh, addToast
     <>
       <div className="page-header">
         <h2>📝 Vocabulary Manager</h2>
-        <p>Add words, phrases, sentences — stored locally & Git-ready</p>
+        <p>Add words, phrases, sentences — stored locally &amp; Git-ready</p>
       </div>
 
       {/* ── Add Form ── */}
@@ -287,70 +464,200 @@ const VocabManager: React.FC<Props> = ({ vocabList, loading, onRefresh, addToast
         </div>
 
         {showForm && (
-          <form onSubmit={handleAdd}>
-            {/* Sentence — Rich Text Editor */}
-            <RichSentenceEditor
-              value={form.sentence}
-              onChange={v => setForm(f => ({ ...f, sentence: v }))}
-              uploadImage={handleImageUpload}
-              uploading={uploading}
-            />
-
-            <div className="form-grid">
-              {/* New Words */}
-              <div className="input-group full-span">
-                <label>NEW WORD(S) — Press Enter or comma to add, can add multiple (word family)</label>
-                <WordTagInput
-                  words={form.newWords}
-                  input={form.wordInput}
-                  onAddWord={() => addWord(form.newWords, form.wordInput, w => setForm(f => ({ ...f, newWords: w })), v => setForm(f => ({ ...f, wordInput: v })))}
-                  onRemoveWord={i => removeWord(form.newWords, i, w => setForm(f => ({ ...f, newWords: w })))}
-                  onInputChange={v => setForm(f => ({ ...f, wordInput: v }))}
-                  placeholder="E.g. qualify, qualification, qualified..."
-                />
-              </div>
-
-              {/* Pronunciation */}
-              <div className="input-group">
-                <label>PRONUNCIATION</label>
-                <input id="input-pronunciation" className="form-input" placeholder="/ˈkwɒlɪfaɪ/" value={form.pronunciation} onChange={e => setForm(f => ({ ...f, pronunciation: e.target.value }))} />
-              </div>
-
-              {/* Synonyms */}
-              <div className="input-group">
-                <label>SYNONYMS (TỪ ĐỒNG NGHĨA)</label>
-                <input id="input-synonyms" className="form-input" placeholder="E.g. eligible, certified" value={form.synonyms} onChange={e => setForm(f => ({ ...f, synonyms: e.target.value }))} />
-              </div>
-
-              {/* Meaning */}
-              <div className="input-group full-span">
-                <label>MEANING / NGHĨA</label>
-                <textarea className="form-textarea" placeholder="E.g. (v) Đủ điều kiện; (n) vòng loại, sự đủ tiêu chuẩn" value={form.meaning} onChange={e => setForm(f => ({ ...f, meaning: e.target.value }))} rows={2} />
-              </div>
-
-              {/* Group / Tab selector */}
-              <div className="input-group full-span">
-                <label>THÊM VÀO TAB</label>
-                <select
-                  className="form-input"
-                  value={form.group}
-                  onChange={e => setForm(f => ({ ...f, group: e.target.value }))}
-                >
-                  <option value="">— Không phân nhóm —</option>
-                  {tabs.map(t => (
-                    <option key={t.id} value={t.name}>{t.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="form-actions">
-              <button type="button" className="btn btn-ghost" onClick={() => { setForm(EMPTY_FORM); }}>Clear</button>
-              <button id="btn-add-vocab" type="submit" className="btn btn-primary" disabled={saving || uploading}>
-                {saving ? '⏳ Saving...' : '+ Add Entry'}
+          <div>
+            {/* ── Input Mode Toggle ── */}
+            <div className="input-mode-toggle">
+              <button
+                type="button"
+                className={`mode-toggle-btn ${inputMode === 'batch' ? 'active' : ''}`}
+                onClick={() => setInputMode('batch')}
+              >
+                🤖 Smart Batch (AI)
+              </button>
+              <button
+                type="button"
+                className={`mode-toggle-btn ${inputMode === 'convo' ? 'active' : ''}`}
+                onClick={() => setInputMode('convo')}
+              >
+                💬 Giao tiếp
+              </button>
+              <button
+                type="button"
+                className={`mode-toggle-btn ${inputMode === 'normal' ? 'active' : ''}`}
+                onClick={() => setInputMode('normal')}
+              >
+                📝 Nhập thủ công
               </button>
             </div>
-          </form>
+
+            {inputMode === 'batch' ? (
+              /* ── Batch Mode ── */
+              <div className="batch-input-area">
+                <div className="batch-hint">
+                  <span>💡</span>
+                  <span>Dán nhiều từ vựng vào đây — AI sẽ tự động phân tích và lưu từng entry riêng. <br />
+                    Ví dụ: <em>Property (n) : tài sản; proprietary (adj) : thuộc quyền sở hữu...</em>
+                  </span>
+                </div>
+                {/* Sentence for batch entries */}
+                <RichSentenceEditor
+                  value={batchSentence}
+                  onChange={v => setBatchSentence(v)}
+                  uploadImage={handleImageUpload}
+                  uploading={uploading}
+                />
+                <textarea
+                  className="form-textarea batch-textarea"
+                  placeholder={`Nhập hoặc dán đoạn từ vựng vào đây...\n\nVí dụ:\nProperty (n) : tài sản; thuộc tính\npropriety (adj) : thuộc quyền sở hữu\nproper (adj) : thích hợp, đúng đắn\nTừ đồng nghĩa:\npossession (n) : tài sản, vật sở hữu`}
+                  value={batchText}
+                  onChange={e => setBatchText(e.target.value)}
+                  rows={10}
+                />
+                <div className="form-grid" style={{ marginTop: 12 }}>
+                  <div className="input-group full-span">
+                    <label>THÊM VÀO TAB</label>
+                    <select
+                      className="form-input"
+                      value={form.group}
+                      onChange={e => setForm(f => ({ ...f, group: e.target.value }))}
+                    >
+                      <option value="">— Không phân nhóm —</option>
+                      {tabs.map(t => (
+                        <option key={t.id} value={t.name}>{t.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => { setBatchText(''); }}
+                  >Clear</button>
+                  <button
+                    type="button"
+                    className="btn btn-primary batch-parse-btn"
+                    onClick={handleBatchParse}
+                    disabled={batchParsing || !batchText.trim()}
+                  >
+                    {batchParsing ? (
+                      <><span className="batch-spinner" />Đang phân tích...</>
+                    ) : (
+                      <>🤖 Phân tích &amp; Lưu tất cả</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            ) : inputMode === 'convo' ? (
+              /* ── Convo Mode ── */
+              <div className="convo-input-area">
+                <div className="batch-hint">
+                  <span>💬</span>
+                  <span>Nhập câu giao tiếp thực tế và giải thích nghĩa. Có thể in đậm, in nghiêng, đổi màu.</span>
+                </div>
+                {/* Câu giao tiếp — Rich Text */}
+                <RichSentenceEditor
+                  value={convoSentence}
+                  onChange={v => setConvoSentence(v)}
+                  uploadImage={handleImageUpload}
+                  uploading={uploading}
+                />
+                {/* Giải thích nghĩa */}
+                <div className="input-group" style={{ marginTop: 10 }}>
+                  <label>GIẢI THÍCH / NGHĨA</label>
+                  <textarea
+                    className="form-textarea"
+                    placeholder="Ví dụ: “I’m heading now” = Giờ tôi đang đến / Tôi sắp tới rồi..."
+                    value={convoMeaning}
+                    onChange={e => setConvoMeaning(e.target.value)}
+                    rows={3}
+                  />
+                </div>
+                {/* Tab */}
+                <div className="form-grid" style={{ marginTop: 10 }}>
+                  <div className="input-group full-span">
+                    <label>THÊM VÀO TAB</label>
+                    <select className="form-input" value={form.group} onChange={e => setForm(f => ({ ...f, group: e.target.value }))}>
+                      <option value="">— Không phân nhóm —</option>
+                      {tabs.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="form-actions">
+                  <button type="button" className="btn btn-ghost" onClick={() => { setConvoSentence(''); setConvoMeaning(''); }}>Clear</button>
+                  <button type="button" className="btn btn-primary" onClick={handleConvoSave} disabled={saving}>
+                    💬 Lưu câu giao tiếp
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* ── Normal Mode ── */
+              <form onSubmit={handleAdd}>
+                {/* Sentence — Rich Text Editor */}
+                <RichSentenceEditor
+                  value={form.sentence}
+                  onChange={v => setForm(f => ({ ...f, sentence: v }))}
+                  uploadImage={handleImageUpload}
+                  uploading={uploading}
+                />
+
+                <div className="form-grid">
+                  {/* New Words */}
+                  <div className="input-group full-span">
+                    <label>NEW WORD(S) — Press Enter or comma to add, can add multiple (word family)</label>
+                    <WordTagInput
+                      words={form.newWords}
+                      input={form.wordInput}
+                      onAddWord={() => addWord(form.newWords, form.wordInput, w => setForm(f => ({ ...f, newWords: w })), v => setForm(f => ({ ...f, wordInput: v })))}
+                      onRemoveWord={i => removeWord(form.newWords, i, w => setForm(f => ({ ...f, newWords: w })))}
+                      onInputChange={v => setForm(f => ({ ...f, wordInput: v }))}
+                      placeholder="E.g. qualify, qualification, qualified..."
+                    />
+                  </div>
+
+                  {/* Pronunciation */}
+                  <div className="input-group">
+                    <label>PRONUNCIATION</label>
+                    <input id="input-pronunciation" className="form-input" placeholder="/ˈkwɒlɪfaɪ/" value={form.pronunciation} onChange={e => setForm(f => ({ ...f, pronunciation: e.target.value }))} />
+                  </div>
+
+                  {/* Synonyms */}
+                  <div className="input-group">
+                    <label>SYNONYMS (TỪ ĐỒNG NGHĨA)</label>
+                    <input id="input-synonyms" className="form-input" placeholder="E.g. eligible, certified" value={form.synonyms} onChange={e => setForm(f => ({ ...f, synonyms: e.target.value }))} />
+                  </div>
+
+                  {/* Meaning */}
+                  <div className="input-group full-span">
+                    <label>MEANING / NGHĨA</label>
+                    <textarea className="form-textarea" placeholder="E.g. (v) Đủ điều kiện; (n) vòng loại, sự đủ tiêu chuẩn" value={form.meaning} onChange={e => setForm(f => ({ ...f, meaning: e.target.value }))} rows={2} />
+                  </div>
+
+                  {/* Group / Tab selector */}
+                  <div className="input-group full-span">
+                    <label>THÊM VÀO TAB</label>
+                    <select
+                      className="form-input"
+                      value={form.group}
+                      onChange={e => setForm(f => ({ ...f, group: e.target.value }))}
+                    >
+                      <option value="">— Không phân nhóm —</option>
+                      {tabs.map(t => (
+                        <option key={t.id} value={t.name}>{t.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="form-actions">
+                  <button type="button" className="btn btn-ghost" onClick={() => { setForm(f => ({ ...EMPTY_FORM, group: f.group })); }}>Clear</button>
+                  <button id="btn-add-vocab" type="submit" className="btn btn-primary" disabled={saving || uploading}>
+                    {saving ? '⏳ Saving...' : '+ Add Entry'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
         )}
       </div>
 
@@ -360,7 +667,7 @@ const VocabManager: React.FC<Props> = ({ vocabList, loading, onRefresh, addToast
         <div className="vocab-tab-bar">
           <button
             className={`vtab ${activeVocabTab === '__all__' ? 'vtab-active' : ''}`}
-            onClick={() => setActiveVocabTab('__all__')}
+            onClick={() => handleSetActiveTab('__all__')}
           >
             All <span className="vtab-count">{vocabList.length}</span>
           </button>
@@ -383,7 +690,7 @@ const VocabManager: React.FC<Props> = ({ vocabList, loading, onRefresh, addToast
                 <button
                   className={`vtab ${activeVocabTab === tab.name ? 'vtab-active' : ''}`}
                   style={activeVocabTab === tab.name ? { borderColor: tab.color, color: tab.color } : {}}
-                  onClick={() => setActiveVocabTab(tab.name)}
+                  onClick={() => handleSetActiveTab(tab.name)}
                   onDoubleClick={() => { setRenamingTab(tab.id); setRenameValue(tab.name); }}
                 >
                   {tab.name}
@@ -400,7 +707,7 @@ const VocabManager: React.FC<Props> = ({ vocabList, loading, onRefresh, addToast
           {ungroupedCount > 0 && (
             <button
               className={`vtab ${activeVocabTab === '__ungrouped__' ? 'vtab-active' : ''}`}
-              onClick={() => setActiveVocabTab('__ungrouped__')}
+              onClick={() => handleSetActiveTab('__ungrouped__')}
             >
               Chưa phân nhóm <span className="vtab-count">{ungroupedCount}</span>
             </button>
@@ -501,41 +808,78 @@ const VocabManager: React.FC<Props> = ({ vocabList, loading, onRefresh, addToast
                 ) : (
                   /* ── View Mode ── */
                   <div className="vocab-card-inner">
-                    {/* Top: words + actions */}
-                    <div className="vocab-card-header">
-                      <div className="vocab-words-group">
-                        {(v.newWords || []).map((w, i) => (
-                          <span key={i} className="vocab-word-chip">{w}</span>
-                        ))}
-                        {v.pronunciation && <span className="vocab-pronunciation">/{v.pronunciation}/</span>}
+                    {/* 1. Sentence — MAIN HIGHLIGHT at top, full rich formatting */}
+                    {v.sentenceImage ? (
+                      <div className="vocab-sentence-img-wrap">
+                        <img src={v.sentenceImage} alt="Sentence" className="vocab-sentence-img" />
                       </div>
-                      <div className="vocab-actions">
+                    ) : v.sentence ? (
+                      <SpeakableDiv text={v.sentence.replace(/<[^>]*>/g, '')} className="vocab-sentence-highlight">
+                        <span dangerouslySetInnerHTML={{ __html: v.sentence }} />
+                      </SpeakableDiv>
+                    ) : null}
+
+                    {/* Actions row — date + edit/delete only, no chips */}
+                    <div className="vocab-card-header">
+                      <div className="vocab-actions" style={{ marginLeft: 'auto' }}>
                         <span className="vocab-date">{v.dateAdded}</span>
                         <button className="btn btn-ghost btn-icon btn-sm" onClick={() => startEdit(v)} title="Edit">✏️</button>
                         <button className="btn btn-danger btn-icon btn-sm" onClick={() => handleDelete(v.id)} title="Delete">🗑</button>
                       </div>
                     </div>
 
-                    {/* Sentence / Image */}
-                    {v.sentenceImage ? (
-                      <div className="vocab-sentence-img-wrap">
-                        <img src={v.sentenceImage} alt="Sentence" className="vocab-sentence-img" />
+                    {/* 2. Word list — parse meaning by " | " for batch entries */}
+                    {v.meaning && (() => {
+                      const hasPipe = v.meaning.includes(' | ');
+                      if (hasPipe) {
+                        return (
+                          <div className="vocab-word-list">
+                            {v.meaning.split(' | ').map((line, idx) => {
+                              const colonIdx = line.indexOf(' : ');
+                              if (colonIdx === -1) {
+                                return (
+                                  <div key={idx} className="vocab-word-line">
+                                    <Speakable text={line}><span className="vocab-word-line-term">{line}</span></Speakable>
+                                  </div>
+                                );
+                              }
+                              const wordPart = line.slice(0, colonIdx);
+                              const defPart = line.slice(colonIdx + 3);
+                              return (
+                                <div key={idx} className="vocab-word-line">
+                                  <Speakable text={wordPart}>
+                                    <span className="vocab-word-line-term">{wordPart}</span>
+                                  </Speakable>
+                                  <span className="vocab-word-line-sep"> : </span>
+                                  <span className="vocab-word-line-def">{defPart}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      }
+                      // Simple (manually added) entry — display as plain text
+                      return (
+                        <SpeakableDiv text={v.meaning} className="vocab-meaning">
+                          <span>{v.meaning}</span>
+                        </SpeakableDiv>
+                      );
+                    })()}
+
+                    {/* 3. Pronunciation */}
+                    {v.pronunciation && (
+                      <div className="vocab-pronunciation-row">
+                        <Speakable text={v.pronunciation}>
+                          <span className="vocab-pronunciation">/{v.pronunciation}/</span>
+                        </Speakable>
                       </div>
-                    ) : v.sentence ? (
-                      <div
-                        className="vocab-sentence"
-                        dangerouslySetInnerHTML={{ __html: v.sentence }}
-                      />
-                    ) : null}
+                    )}
 
-                    {/* Meaning */}
-                    {v.meaning && <div className="vocab-meaning">{v.meaning}</div>}
-
-                    {/* Synonyms */}
+                    {/* 4. Synonyms */}
                     {v.synonyms && (
-                      <div className="vocab-synonyms">
-                        <span className="synonyms-label">≈</span> {v.synonyms}
-                      </div>
+                      <SpeakableDiv text={v.synonyms} className="vocab-synonyms">
+                        <span className="synonyms-label">≈</span> <span>{v.synonyms}</span>
+                      </SpeakableDiv>
                     )}
                   </div>
                 )}
@@ -548,7 +892,7 @@ const VocabManager: React.FC<Props> = ({ vocabList, loading, onRefresh, addToast
   );
 };
 
-// ── Rich Sentence Editor ─────────────────────────────────────────────
+// ── Rich Sentence Editor ──────────────────────────────────────────────────────
 const FONT_SIZES = ['12px', '13px', '14px', '16px', '18px', '20px', '24px'];
 const COLORS = [
   '#f0f0f5', '#8b5cf6', '#6366f1', '#10b981', '#f59e0b',
@@ -570,7 +914,6 @@ const RichSentenceEditor: React.FC<RichEditorProps> = ({ value, onChange, upload
   const [showColorPicker, setShowColorPicker] = useState(false);
   const savedRangeRef = useRef<Range | null>(null);
 
-  // Sync editor content when value is reset externally (e.g. Clear)
   useEffect(() => {
     if (editorRef.current && editorRef.current.innerHTML !== value) {
       editorRef.current.innerHTML = value;
@@ -616,13 +959,11 @@ const RichSentenceEditor: React.FC<RichEditorProps> = ({ value, onChange, upload
       e.preventDefault();
       const file = imageItem.getAsFile();
       if (!file) return;
-      // Save cursor position before async upload
       const sel = window.getSelection();
       let savedRange: Range | null = null;
       if (sel && sel.rangeCount > 0) savedRange = sel.getRangeAt(0).cloneRange();
       const url = await uploadImage(file);
       if (!url) return;
-      // Restore cursor and insert image
       if (savedRange && sel) {
         sel.removeAllRanges();
         sel.addRange(savedRange);
@@ -647,7 +988,6 @@ const RichSentenceEditor: React.FC<RichEditorProps> = ({ value, onChange, upload
       onChange(editorRef.current?.innerHTML || '');
       return;
     }
-    // Plain text paste — strip HTML
     e.preventDefault();
     const text = e.clipboardData.getData('text/plain');
     document.execCommand('insertText', false, text);
@@ -663,7 +1003,6 @@ const RichSentenceEditor: React.FC<RichEditorProps> = ({ value, onChange, upload
     saveSelection();
     editorRef.current?.focus();
     restoreSelection();
-    // Wrap selection in a span with font-size
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
       const range = sel.getRangeAt(0);
@@ -672,9 +1011,7 @@ const RichSentenceEditor: React.FC<RichEditorProps> = ({ value, onChange, upload
       range.surroundContents(span);
       onChange(editorRef.current?.innerHTML || '');
     } else {
-      // No selection: set default for next typed chars
       document.execCommand('fontSize', false, '7');
-      // Override the font size on the created element
       const els = editorRef.current?.querySelectorAll('font[size="7"]');
       els?.forEach(el => {
         (el as HTMLElement).removeAttribute('size');
@@ -712,7 +1049,6 @@ const RichSentenceEditor: React.FC<RichEditorProps> = ({ value, onChange, upload
 
         <div className="rich-divider" />
 
-        {/* Font size */}
         <select
           className="rich-select"
           value={fontSize}
@@ -725,7 +1061,6 @@ const RichSentenceEditor: React.FC<RichEditorProps> = ({ value, onChange, upload
 
         <div className="rich-divider" />
 
-        {/* Color picker */}
         <div className="rich-color-wrap" style={{ position: 'relative' }}>
           <button
             type="button"
@@ -772,8 +1107,6 @@ const RichSentenceEditor: React.FC<RichEditorProps> = ({ value, onChange, upload
         onPaste={handlePaste}
         onKeyUp={handleKeyUp}
         onKeyDown={e => {
-          // Ctrl+B / Ctrl+I handled natively by browser in contentEditable,
-          // we just sync state after
           if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'i')) {
             setTimeout(updateActiveState, 10);
           }

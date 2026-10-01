@@ -7,6 +7,8 @@ interface QuizQuestion {
   options: string[];
   answer: string;
   explanation: string;
+  optionExplanations?: string[];   // per-option explanation in English
+  optionExplanationsVi?: string[]; // per-option explanation in Vietnamese
 }
 
 interface TabInfo {
@@ -188,9 +190,13 @@ const QuizMode: React.FC<Props> = ({ vocabList, addToast }) => {
   };
 
   const getTypeLabel = (type: string) => {
-    if (type === 'word_to_meaning') return '📖 Word → Meaning';
-    if (type === 'meaning_to_word') return '🔡 Meaning → Word';
-    return '✏️ Fill in the Blank';
+    if (type === 'word_to_meaning')  return '📖 Word → Meaning';
+    if (type === 'meaning_to_word')  return '🔡 Meaning → Word';
+    if (type === 'fill_in')          return '✏️ Fill in the Blank';
+    if (type === 'synonym_match')    return '🔗 Synonym Match';
+    if (type === 'context_usage')    return '💡 Context Usage';
+    if (type === 'it_communication') return '💬 IT Communication';
+    return '📝 Quiz';
   };
 
   // ── Not started ──
@@ -408,7 +414,7 @@ const QuizMode: React.FC<Props> = ({ vocabList, addToast }) => {
       </div>
 
       <div className="glass-card question-card" ref={cardRef}>
-        <div className="question-type-badge">{getTypeLabel(q.type)}</div>
+        <div className={`question-type-badge${q.type === 'it_communication' ? ' it-badge' : ''}`}>{getTypeLabel(q.type)}</div>
 
         <div className="question-text">
           {q.question.split('___').map((part, i, arr) => (
@@ -445,12 +451,72 @@ const QuizMode: React.FC<Props> = ({ vocabList, addToast }) => {
         </div>
 
         {selected && (
-          <div className={`explanation-box ${isCorrect ? 'expl-correct' : 'expl-wrong'}`}>
-            <div className="expl-header">
-              {isCorrect ? '✅ Chính xác!' : `❌ Chưa đúng — Đáp án: "${q.answer}"`}
+          <>
+            {/* ── English explanation box ── */}
+            <div className={`explanation-box ${isCorrect ? 'expl-correct' : 'expl-wrong'}`}>
+              <div className="expl-header">
+                <span className="expl-lang-badge">🇬🇧 EN</span>
+                {isCorrect ? '\u00a0✅ Chính xác!' : `\u00a0❌ Chưa đúng — Đáp án đúng: "${q.answer}"`}
+              </div>
+
+              {q.optionExplanations && q.optionExplanations.length === q.options.length ? (
+                <div className="expl-options-breakdown">
+                  {q.options.map((opt, i) => {
+                    const isOptCorrect = opt === q.answer;
+                    const isOptChosen  = opt === selected;
+                    return (
+                      <div
+                        key={i}
+                        className={`expl-option-row ${
+                          isOptCorrect ? 'expl-opt-correct' :
+                          isOptChosen  ? 'expl-opt-wrong'   : 'expl-opt-neutral'
+                        }`}
+                      >
+                        <span className="expl-opt-label">{LABELS[i]}</span>
+                        <div className="expl-opt-content">
+                          <div className="expl-opt-text">{opt}</div>
+                          <div className="expl-opt-reason">{q.optionExplanations?.[i]}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="expl-body">{q.explanation}</div>
+              )}
             </div>
-            <div className="expl-body">{q.explanation}</div>
-          </div>
+
+            {/* ── Vietnamese explanation box ── */}
+            {q.optionExplanationsVi && q.optionExplanationsVi.length === q.options.length && (
+              <div className={`explanation-box expl-vi ${isCorrect ? 'expl-correct' : 'expl-wrong'}`}>
+                <div className="expl-header">
+                  <span className="expl-lang-badge vi-badge">🇻🇳 VI</span>
+                  {isCorrect ? '\u00a0✅ Giải thích tiếng Việt' : '\u00a0❌ Giải thích tiếng Việt'}
+                </div>
+                <div className="expl-options-breakdown">
+                  {q.options.map((opt, i) => {
+                    const isOptCorrect = opt === q.answer;
+                    const isOptChosen  = opt === selected;
+                    return (
+                      <div
+                        key={i}
+                        className={`expl-option-row ${
+                          isOptCorrect ? 'expl-opt-correct' :
+                          isOptChosen  ? 'expl-opt-wrong'   : 'expl-opt-neutral'
+                        }`}
+                      >
+                        <span className="expl-opt-label">{LABELS[i]}</span>
+                        <div className="expl-opt-content">
+                          <div className="expl-opt-text expl-opt-vi">{opt}</div>
+                          <div className="expl-opt-reason">{q.optionExplanationsVi?.[i]}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         <div className="quiz-nav">

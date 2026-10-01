@@ -58,11 +58,17 @@ vocab-app/
 // Định nghĩa trong src/App.tsx — phải sync với server/db.js
 export interface VocabEntry {
   id: string;              // UUID v4
-  sentence: string;        // Context sentence (text), hoặc '' nếu dùng ảnh
+  sentence: string;        // Context sentence — lưu dạng HTML rich text (có thể có <b>, <i>, <span style>...)
+                           // Plain text dùng .replace(/<[^>]*>/g, '') khi cần TTS
   sentenceImage: string | null; // Base64 data URL "data:image/...;base64,..." hoặc null
-  newWords: string[];      // Mảng từ (word family), ví dụ ["qualify","qualification"]
+  newWords: string[];      // Mảng từ kèm loại từ viết tắt, ví dụ: ["property (n)", "properly (adv)"]
+                           // TTS hook dùng regex .replace(/\s*\([^)]{1,10}\)\s*$/, '') để đọc đúng
   pronunciation: string;   // Phát âm IPA, ví dụ "/ˈkwɒlɪfaɪ/"
-  meaning: string;         // Nghĩa tiếng Việt, ví dụ "(v) Đủ điều kiện"
+  meaning: string;         // Nghĩa tiếng Việt.
+                           // - Nhập thủ công (đơn giản): "(v) Đủ điều kiện; tương xứng"
+                           // - Batch (word family): dùng " | " làm separator giữa các từ:
+                           //   "property (n) : tài sản | properly (adv) : một cách đúng đắn"
+                           //   → Display tách ra thành từng dòng riêng
   synonyms: string;        // Từ đồng nghĩa, ví dụ "eligible, certified"
   group: string;           // Tên tab/group, ví dụ "T9/2026" hoặc "" nếu chưa phân nhóm
   dateAdded: string;       // Định dạng vi-VN: "26/9/2026"
@@ -103,6 +109,7 @@ interface ChatSession {
 | PUT | `/api/vocab/:id` | Cập nhật entry theo id |
 | DELETE | `/api/vocab/:id` | Xóa entry khỏi MongoDB |
 | POST | `/api/upload` | Upload ảnh → convert Base64 → trả về `{ url: "data:image/..." }` |
+| POST | `/api/parse-vocab` | **Smart Batch**: gọi OpenAI parse văn bản → JSON array entries. Body: `{ text, group, sentence }`. AI trả mảng word-family entries, server gán `sentence` từ user vào mỗi entry rồi lưu MongoDB. |
 | POST | `/api/quiz` | Gọi OpenAI tạo câu trắc nghiệm — nhận `{ vocabList, count }`, count từ 1–50 |
 | POST | `/api/chat` | Gọi OpenAI chat với systemPrompt, trả về `{ reply }` |
 | GET | `/api/tabs` | Lấy danh sách tabs từ MongoDB |
@@ -182,6 +189,17 @@ async function connectDB() {
 - Thêm style mới → append vào cuối `index.css`, TRƯỚC `/* Responsive */`
 - Animations/transitions: dùng `transition: all 0.2s ease`
 
+### Vocab Card — Color Palette (KHÔNG thay đổi tùy tiện)
+```
+Sentence (chữ thường) : #dde1e7   — trắng nhẹ, 14px, line-height 1.7
+Bold words trong sentence : #a78bfa — violet glow (text-shadow)
+Word term "govern (v)"  : #7dd3fc  — sky-blue, font-weight 600
+Word separator " : "    : #475569  — xám mờ
+Word definition (VN)    : #94a3b8  — slate
+Phát âm IPA             : #6ee7b7  — mint-green
+Từ đồng nghĩa           : #fbbf24  — warm amber
+```
+
 ### Classes đã có (KHÔNG đổi tên)
 ```
 .glass-card           → Card nền kính mờ
@@ -191,7 +209,16 @@ async function connectDB() {
 .navbar / .navbar-brand / .nav-tab → Navigation
 .page-header          → Tiêu đề trang
 .word-tag / .word-tag-container / .word-tag-input → Multi-word tags
-.vocab-card / .vocab-card-inner / .vocab-word-chip → Vocab list items
+.vocab-card / .vocab-card-inner / .vocab-card-header → Vocab list items
+.vocab-sentence-highlight → Sentence hiển thị đầu card (HTML rich text)
+.vocab-word-list / .vocab-word-line → Word family rows
+.vocab-word-line-term / .vocab-word-line-sep / .vocab-word-line-def → Parts of each word line
+.vocab-meaning        → Nghĩa đơn giản (non-batch entries)
+.vocab-pronunciation / .vocab-pronunciation-row → Phát âm
+.vocab-synonyms / .synonyms-label → Từ đồng nghĩa
+.input-mode-toggle / .mode-toggle-btn → 3-mode input toggle
+.batch-input-area / .batch-hint / .batch-textarea / .batch-spinner → Batch mode UI
+.convo-input-area     → Giao tiếp mode UI
 .sentence-mode-toggle / .mode-btn → Text/Image toggle
 .image-upload-area / .upload-placeholder → Image upload zone
 .chat-messages / .msg-bubble / .chat-input-area → Chat UI
@@ -222,7 +249,7 @@ async function connectDB() {
 
 - **Model**: `gpt-4o-mini` (nhanh + rẻ)
 - **Import trong server**: `const { OpenAI } = require('openai')` — named import, không phải default
-- **Quiz format**: JSON array, số câu do `count` quyết định (1–50), types: `word_to_meaning | meaning_to_word | fill_in`
+- **Quiz format**: JSON array, số câu do `count` quyết định (1–50), types: `word_to_meaning | meaning_to_word | fill_in | synonym_match | context_usage | it_communication`
 - **Chat format**: AI reply kèm `---` section có `📝 **Corrections:**` hoặc `✨ Great job!`
 
 ---
@@ -245,10 +272,12 @@ KHÔNG push lên Git:
   - build/
 ```
 
-**Remote**: `https://github.com/TuanMinh1905/WebEnglish-Official.git` — branch `master`
+**Remote**: `https://github.com/TuanMinh1905/WebEnglish.git` — branch **`minhDev`** ⚠️
+> `git push origin minhDev` — KHÔNG dùng `main` hay `master` (không tồn tại)
+
 **Production URL**: `https://web-english-official.vercel.app`
 
-> Auto-deploy: mỗi lần `git push origin master` → Vercel tự build + deploy trong ~3 phút
+> Auto-deploy: mỗi lần `git push origin minhDev` → Vercel tự build + deploy trong ~3 phút
 
 ---
 
@@ -291,4 +320,114 @@ npm run dev
 
 ---
 
-*Cập nhật lần cuối: 26/9/2026 — Đã migrate sang MongoDB Atlas + deploy Vercel.*
+## 13. Input Modes — VocabManager
+
+VocabManager có **3 chế độ nhập** (toggle ở đầu form):
+
+| Mode | Button | Mục đích |
+|------|--------|---------|
+| Smart Batch (AI) | 🤖 | Dán đoạn từ vựng → AI parse → lưu nhiều entries. **Mặc định** |
+| Giao tiếp | 💬 | Nhập 1 câu giao tiếp thực tế + giải thích nghĩa |
+| Nhập thủ công | 📝 | Nhập từng field riêng lẻ (sentence, words, pronunciation, meaning, synonyms) |
+
+### Smart Batch
+- Người dùng paste đoạn văn bản chứa word family
+- AI (`/api/parse-vocab`) group theo gốc từ → 1 entry duy nhất
+- `newWords`: `["property (n)", "proprietary (adj)", "proper (adj)"]`
+- `meaning`: `"property (n) : tài sản | proprietary (adj) : thuộc quyền sở hữu | ..."`
+- Separator ` | ` → display tách thành từng dòng riêng
+- Có thêm ô **Sentence** (Rich Text Editor) riêng → truyền vào `sentence` field
+
+### Giao tiếp (Convo mode)
+- `sentence` = HTML rich text (câu giao tiếp)
+- `meaning` = giải thích nghĩa plain text
+- `newWords` = `[]` (không có word chips)
+- Hiển thị: sentence highlight + meaning dưới
+
+### Nhập thủ công
+- Form đầy đủ: Sentence (Rich Text) + Words + Pronunciation + Synonyms + Meaning + Tab
+- `newWords` thêm bằng Enter/comma trong word tag input
+
+---
+
+## 14. Vocab Card — Thứ tự hiển thị
+
+```
+1. Sentence (vocab-sentence-highlight)
+   - Plain text màu #dde1e7
+   - Từ in đậm (<b>/<strong>) glow violet #a78bfa
+   - Preserve bold/italic/color từ rich text editor
+
+2. Actions row (vocab-card-header)
+   - Chỉ: date | ✏️ | 🗑️  (không có word chips)
+
+3. Word list (vocab-word-list)
+   - Mỗi dòng: [term sky-blue] [sep dim] [def slate]
+   - Parse từ meaning bằng " | " separator
+   - Nếu không có " | " → hiển thị plain (vocab-meaning)
+
+4. Pronunciation (vocab-pronunciation)
+   - Màu mint-green #6ee7b7
+
+5. Synonyms (vocab-synonyms)
+   - Màu amber #fbbf24
+   - Prefix: ≈
+```
+
+---
+
+## 15. Quiz System — Chi tiết
+
+### Question Types (6 loại)
+| Type | Mô tả |
+|------|-------|
+| `word_to_meaning` | Hiện từ/cụm, hỏi nghĩa tiếng Việt |
+| `meaning_to_word` | Hiện nghĩa tiếng Việt, hỏi từ tiếng Anh |
+| `fill_in` | Điền từ vào câu có blank `___` |
+| `synonym_match` | Tìm từ đồng nghĩa gần nhất |
+| `context_usage` | Hiểu nghĩa từ trong ngữ cảnh câu mới |
+| `it_communication` | Tình huống giao tiếp IT thực tế (hardcoded pool) |
+
+### IT Communication Questions Pool
+- **Vị trí**: `server/server.js` — hằng số `IT_CONVO_QUESTIONS` (10 câu hardcoded)
+- **Inject**: Mỗi quiz random **4–6 câu** từ pool này vào câu hỏi từ vựng
+- **Nội dung**: standup blocker, client ETA, PR review, production bug, LGTM, Slack after-hours, "Per my last email", email mở đầu, technical debt, Sprint Retro
+- **Badge**: màu amber `💬 IT Communication` (CSS class `.it-badge`)
+- **KHÔNG** gọi OpenAI cho câu IT — data có sẵn trong code
+
+### QuizQuestion Interface (`src/components/QuizMode.tsx`)
+```typescript
+interface QuizQuestion {
+  type: string;
+  question: string;
+  options: string[];          // luôn 4 options
+  answer: string;             // phải là 1 trong 4 options
+  explanation: string;        // 1 câu giải thích ngắn (EN)
+  optionExplanations?: string[];   // 4 giải thích EN, 1 per option
+  optionExplanationsVi?: string[]; // 4 giải thích VI (bản dịch của trên)
+}
+```
+
+### Bilingual Explanation UI
+- Sau khi chọn đáp án: hiện **2 ô giải thích** chồng nhau
+- **Ô 1** `🇬🇧 EN`: giải thích từng option bằng tiếng Anh
+- **Ô 2** `🇻🇳 VI`: bản dịch tiếng Việt tương ứng (badge amber)
+- Đúng → nền xanh `.expl-opt-correct` | Sai bạn chọn → đỏ `.expl-opt-wrong` | Còn lại → mờ `.expl-opt-neutral`
+- CSS classes: `.expl-lang-badge`, `.vi-badge`, `.expl-vi`, `.expl-opt-vi`, `.expl-options-breakdown`
+- **Vocab questions**: `optionExplanationsVi` do AI tạo tự động (prompt yêu cầu dịch sang tiếng Việt)
+- **IT questions**: `optionExplanationsVi` hardcoded sẵn trong `IT_CONVO_QUESTIONS`
+
+### Rules khi thêm IT questions mới
+- Mỗi question object phải có đủ: `type`, `question`, `options[4]`, `answer`, `explanation`, `optionExplanations[4]`, `optionExplanationsVi[4]`
+- `answer` phải khớp chính xác với 1 trong 4 strings trong `options`
+- Giải thích đúng bắt đầu bằng `✅ Correct:` (EN) / `✅ Đúng:` (VI)
+- Giải thích sai bắt đầu bằng `❌` (cả EN lẫn VI)
+
+---
+
+> **Tab persistence**: tab đang chọn lưu vào `localStorage` key `vocabActiveTab`.
+> Mỗi lần refresh trang sẽ restore về tab cũ, không cần chọn lại.
+
+---
+
+*Cập nhật lần cuối: 2/10/2026 — Thêm Smart Batch, Giao tiếp mode, unified card design, MongoDB Atlas. Quiz nâng cấp: 5 question types, IT communication pool, bilingual explanation (EN + VI).*

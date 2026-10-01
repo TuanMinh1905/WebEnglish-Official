@@ -390,14 +390,90 @@ body {
 
 /* Explanation box */
 .explanation-box {
-  margin-top: 20px; padding: 16px 20px; border-radius: var(--radius-md);
+  margin-top: 20px; padding: 18px 20px; border-radius: var(--radius-md);
   font-size: 13px; line-height: 1.65; animation: fade-slide-up 0.25s ease;
 }
-@keyframes fade-slide-up { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
-.explanation-box.expl-correct { background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.25); }
-.explanation-box.expl-wrong   { background: rgba(239,68,68,0.07);  border: 1px solid rgba(239,68,68,0.2);  }
-.expl-header { font-weight: 700; font-size: 14px; margin-bottom: 6px; color: var(--text-primary); }
+@keyframes fade-slide-up { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+.explanation-box.expl-correct { background: rgba(16,185,129,0.07); border: 1px solid rgba(16,185,129,0.2); }
+.explanation-box.expl-wrong   { background: rgba(239,68,68,0.06);  border: 1px solid rgba(239,68,68,0.18); }
+.expl-header { font-weight: 700; font-size: 14px; margin-bottom: 14px; color: var(--text-primary); display: flex; align-items: center; }
 .expl-body { color: var(--text-secondary); }
+
+/* Language badge inside explanation header */
+.expl-lang-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+  padding: 2px 8px; border-radius: 99px; margin-right: 2px; flex-shrink: 0;
+  background: rgba(139,92,246,0.18); color: var(--accent);
+  border: 1px solid rgba(139,92,246,0.3);
+}
+.vi-badge {
+  background: rgba(239,183,73,0.15); color: #f0c060;
+  border-color: rgba(239,183,73,0.3);
+}
+
+/* Vietnamese explanation box — slightly different border hue to distinguish */
+.expl-vi {
+  margin-top: 10px;
+}
+.expl-vi.expl-correct { border-color: rgba(16,185,129,0.15); background: rgba(16,185,129,0.05); }
+.expl-vi.expl-wrong   { border-color: rgba(239,68,68,0.13);  background: rgba(239,68,68,0.04); }
+
+/* VI option text — italic to signal translated content */
+.expl-opt-vi { font-style: normal; opacity: 0.6; font-size: 12px; }
+
+/* Per-option breakdown */
+.expl-options-breakdown { display: flex; flex-direction: column; gap: 8px; }
+.expl-option-row {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 10px 14px; border-radius: 10px;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+  animation: fade-slide-up 0.2s ease both;
+}
+.expl-option-row:nth-child(1) { animation-delay: 0.05s; }
+.expl-option-row:nth-child(2) { animation-delay: 0.10s; }
+.expl-option-row:nth-child(3) { animation-delay: 0.15s; }
+.expl-option-row:nth-child(4) { animation-delay: 0.20s; }
+.expl-opt-correct {
+  background: rgba(16,185,129,0.1);
+  border-color: rgba(16,185,129,0.25);
+}
+.expl-opt-wrong {
+  background: rgba(239,68,68,0.09);
+  border-color: rgba(239,68,68,0.2);
+}
+.expl-opt-neutral {
+  background: rgba(255,255,255,0.03);
+  border-color: rgba(255,255,255,0.06);
+}
+.expl-opt-label {
+  width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 800; margin-top: 1px;
+}
+.expl-opt-correct .expl-opt-label { background: rgba(16,185,129,0.2);  color: var(--green); }
+.expl-opt-wrong   .expl-opt-label { background: rgba(239,68,68,0.18);  color: var(--red);   }
+.expl-opt-neutral .expl-opt-label { background: rgba(255,255,255,0.07); color: var(--text-muted); }
+.expl-opt-content { flex: 1; min-width: 0; }
+.expl-opt-text {
+  font-size: 13px; font-weight: 600; line-height: 1.4; margin-bottom: 3px;
+}
+.expl-opt-correct .expl-opt-text { color: var(--green); }
+.expl-opt-wrong   .expl-opt-text { color: var(--red);   }
+.expl-opt-neutral .expl-opt-text { color: var(--text-muted); }
+.expl-opt-reason {
+  font-size: 12px; line-height: 1.5;
+}
+.expl-opt-correct .expl-opt-reason { color: rgba(110,231,183,0.85); }
+.expl-opt-wrong   .expl-opt-reason { color: rgba(252,165,165,0.8); }
+.expl-opt-neutral .expl-opt-reason { color: var(--text-muted); }
+
+/* IT Communication question badge */
+.question-type-badge.it-badge {
+  background: rgba(251,191,36,0.12); color: #fbbf24; border-color: rgba(251,191,36,0.25);
+}
+
 .quiz-nav { display: flex; justify-content: space-between; align-items: center; margin-top: 24px; }
 
 /* Quiz Result */
@@ -646,7 +722,7 @@ body {
   color: var(--text-primary); font-weight: 600; font-size: 15px;
 }
 .vocab-pronunciation {
-  font-family: var(--mono); font-size: 12px; color: var(--accent);
+  font-family: var(--mono); font-size: 13px; color: #c4b5fd; letter-spacing: 0.3px;
 }
 .vocab-sentence {
   font-size: 13px; color: var(--text-secondary);
@@ -654,17 +730,82 @@ body {
 }
 .vocab-sentence-img-wrap { margin-bottom: 8px; }
 .vocab-sentence-img { max-width: 100%; max-height: 180px; border-radius: 8px; object-fit: contain; }
-.vocab-meaning {
-  font-size: 13px; color: var(--text-primary);
-  line-height: 1.5; margin-bottom: 4px;
+
+/* ════════════════════════════════════════════════════════════════
+   VOCAB CARD — Unified Design
+   Font: 14px throughout, line-height 1.7
+   Palette:
+     Sentence plain    : #dde1e7  (near-white)
+     Bold word glow    : #a78bfa  (violet) + glow
+     Word term (name)  : #7dd3fc  (sky-blue)
+     Word separator    : #475569  (dim)
+     Word def          : #94a3b8  (slate)
+     Pronunciation     : #6ee7b7  (mint-green)
+     Synonyms          : #fbbf24  (warm amber)
+   ════════════════════════════════════════════════════════════════ */
+
+/* ── Sentence ───────────────────────────────────────────────────── */
+.vocab-sentence-highlight {
+  font-size: 14px;
+  color: #dde1e7;
+  line-height: 1.7;
+  font-style: normal;
+  margin-bottom: 10px;
 }
+/* Bold words in sentence glow violet */
+.vocab-sentence-highlight b,
+.vocab-sentence-highlight strong {
+  color: #a78bfa;
+  font-weight: 700;
+  text-shadow: 0 0 12px rgba(167, 139, 250, 0.7), 0 0 24px rgba(139, 92, 246, 0.35);
+  font-style: normal;
+}
+.vocab-sentence-highlight i, .vocab-sentence-highlight em { font-style: italic; }
+.vocab-sentence-highlight span[style] { font-style: normal; }
+
+/* ── Word family list ───────────────────────────────────────────── */
+.vocab-word-list {
+  display: flex; flex-direction: column; gap: 4px;
+  margin-bottom: 8px;
+}
+.vocab-word-line {
+  font-size: 14px; line-height: 1.7;
+  display: flex; flex-wrap: wrap; align-items: baseline;
+}
+.vocab-word-line-term {
+  font-weight: 600; color: #7dd3fc;
+}
+.vocab-word-line-sep {
+  color: #475569; margin: 0 4px;
+}
+.vocab-word-line-def {
+  color: #94a3b8; flex: 1;
+}
+
+/* ── Simple meaning (non-batch) ─────────────────────────────────── */
+.vocab-meaning {
+  font-size: 14px; color: #94a3b8;
+  line-height: 1.7; margin-bottom: 6px;
+}
+
+/* ── Pronunciation ──────────────────────────────────────────────── */
+.vocab-pronunciation-row { margin-bottom: 4px; }
+.vocab-pronunciation {
+  font-size: 14px; color: #6ee7b7;
+  letter-spacing: 0.3px;
+}
+
+/* ── Synonyms ───────────────────────────────────────────────────── */
 .vocab-synonyms {
-  font-size: 12px; color: var(--text-muted);
-  display: flex; align-items: center; gap: 4px;
+  font-size: 14px; color: #fbbf24;
+  display: flex; align-items: center; gap: 5px;
+  margin-top: 2px;
 }
 .synonyms-label {
-  color: var(--accent); font-size: 14px; font-weight: 700;
+  color: #fbbf24; font-size: 15px; font-weight: 700; opacity: 0.8;
 }
+
+/* ── Meta (date, actions) ───────────────────────────────────────── */
 .vocab-date { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 .vocab-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
@@ -1084,5 +1225,166 @@ body {
   background: rgba(139,92,246,0.18);
   border-color: rgba(139,92,246,0.4);
   color: var(--accent);
+}
+
+/* ─── TTS (Text-to-Speech) Hover Button ─────────────────────────────────── */
+.speakable-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.speakable-block {
+  position: relative;
+  display: block;
+}
+
+.tts-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(139,92,246,0.15);
+  border: 1px solid rgba(139,92,246,0.3);
+  border-radius: 6px;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 3px 5px;
+  margin-left: 4px;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  vertical-align: middle;
+  animation: tts-pop 0.15s ease;
+}
+
+.tts-btn:hover {
+  background: rgba(139,92,246,0.3);
+  border-color: var(--accent);
+  transform: scale(1.1);
+}
+
+.tts-btn-block {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 0;
+}
+
+.tts-btn-block:hover {
+  transform: translateY(-50%) scale(1.1);
+}
+
+@keyframes tts-pop {
+  from { opacity: 0; transform: scale(0.7); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ─── Input Mode Toggle ──────────────────────────────────────────────────── */
+.input-mode-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 4px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  width: fit-content;
+}
+
+.mode-toggle-btn {
+  padding: 7px 16px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mode-toggle-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.05);
+}
+
+.mode-toggle-btn.active {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff;
+  box-shadow: 0 2px 10px var(--accent-glow);
+}
+
+/* ─── Batch Input Area ───────────────────────────────────────────────────── */
+.batch-input-area {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.batch-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: rgba(139,92,246,0.07);
+  border: 1px solid rgba(139,92,246,0.2);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.batch-hint > span:first-child {
+  font-size: 18px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.batch-hint em {
+  color: var(--text-primary);
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.batch-textarea {
+  min-height: 200px !important;
+  font-family: var(--mono) !important;
+  font-size: 13px !important;
+  line-height: 1.7;
+  resize: vertical;
+}
+
+.batch-parse-btn {
+  min-width: 200px;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* ─── Batch Spinner ──────────────────────────────────────────────────────── */
+.batch-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: batch-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes batch-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ─── Vocab card speakable adjustments ───────────────────────────────────── */
+.vocab-sentence.speakable-block,
+.vocab-meaning.speakable-block,
+.vocab-synonyms.speakable-block {
+  padding-right: 36px; /* space for the floating TTS button */
 }
 
